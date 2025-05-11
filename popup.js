@@ -140,6 +140,83 @@ document.addEventListener("DOMContentLoaded", () => {
 	if (clearChatButton) {
 		clearChatButton.addEventListener("click", clearChat);
 	}
+	// Function to process the file content with the chatbot
+	function processFileWithChatbot(fileName, fileContent) {
+		console.log(`Processing file: ${fileName}`);
+		// Send a message to the background script
+		chrome.runtime.sendMessage(
+			{
+				type: "fileUploaded",
+				payload: {
+					name: fileName,
+					content: fileContent,
+				},
+			},
+			(response) => {
+				if (chrome.runtime.lastError) {
+					console.error(
+						"Error sending file to background script:",
+						chrome.runtime.lastError.message
+					);
+					displayMessage(
+						`Error processing file: ${chrome.runtime.lastError.message}`,
+						"error"
+					);
+				} else {
+					console.log("File sent to background script, response:", response);
+					// Optionally display a message to the user based on the response
+					if (response && response.status === "success") {
+						displayMessage(
+							`File "${fileName}" processed. ${response.message || ""}`,
+							"system"
+						);
+					} else if (response && response.status === "error") {
+						displayMessage(
+							`Error processing file "${fileName}": ${
+								response.message || "Unknown error"
+							}`,
+							"error"
+						);
+					}
+				}
+			}
+		);
+	}
+
+	const attachFileBtn = document.getElementById("attachFileBtn");
+	if (attachFileBtn) {
+		attachFileBtn.addEventListener("click", () => {
+			const fileInput = document.createElement("input");
+			fileInput.type = "file";
+			fileInput.style.display = "none";
+
+			fileInput.addEventListener("change", (event) => {
+				const file = event.target.files[0];
+				if (file) {
+					const reader = new FileReader();
+
+					reader.onload = (e) => {
+						const fileContent = e.target.result;
+						const fileName = file.name;
+						console.log("File Name:", fileName);
+						console.log("File Content:", fileContent.substring(0, 100) + "..."); // Log snippet
+						processFileWithChatbot(fileName, fileContent);
+					};
+
+					reader.onerror = (e) => {
+						console.error("Error reading file:", e);
+						displayMessage("Error reading file.", "error");
+					};
+
+					reader.readAsText(file); // Read as plain text
+				}
+			});
+
+			document.body.appendChild(fileInput);
+			fileInput.click();
+			document.body.removeChild(fileInput);
+		});
+	}
 
 	// Listener for messages from content script or background script
 	chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {

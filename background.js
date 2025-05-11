@@ -41,3 +41,23 @@ chrome.runtime.onInstalled.addListener(() => {
 		});
 	});
 });
+
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+	if (request.type === "fileUploaded") {
+		const { name, content } = request.payload;
+		console.log(`Background script received file: ${name}`);
+
+		// TODO: Add chatbot's file analysis logic here
+		// For example, you might send the content to a chatbot API
+		// and then send the chatbot's response back to the popup.
+
+		// Simulate processing and send a response
+		sendResponse({
+			status: "success",
+			message: `File "${name}" received by background script.`,
+		});
+	}
+	// Return true to indicate that sendResponse will be called asynchronously.
+	// This is important even if the response is sent quickly in this version.
+	return true;
+});

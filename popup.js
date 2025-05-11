@@ -6,8 +6,45 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	let chatHistory = []; // In-memory chat history
 
-	// Function to display a message in the chat
-	function displayMessage(messageText, sender) {
+	// Function to save chat history to chrome.storage.local
+	function saveChatHistory() {
+		chrome.storage.local.set({ chatHistory: chatHistory }, () => {
+			if (chrome.runtime.lastError) {
+				console.error(
+					"Error saving chat history:",
+					chrome.runtime.lastError.message
+				);
+			}
+		});
+	}
+
+	// Function to load chat history from chrome.storage.local
+	function loadChatHistory() {
+		chrome.storage.local.get(["chatHistory"], (result) => {
+			if (chrome.runtime.lastError) {
+				console.error(
+					"Error loading chat history:",
+					chrome.runtime.lastError.message
+				);
+				return;
+			}
+			if (result.chatHistory && Array.isArray(result.chatHistory)) {
+				chatHistory = result.chatHistory;
+				chatHistory.forEach((message) => {
+					// Call displayMessage without adding to history again, as it's already loaded
+					// We need a way to display without re-adding and re-saving.
+					// For now, let's create a temporary display-only version or adjust displayMessage.
+					// Simplified: just display. displayMessage will handle the visual part.
+					// The issue is displayMessage also tries to save.
+					// Let's adjust displayMessage to take an optional flag.
+					displayMessageInternal(message.text, message.sender, false);
+				});
+			}
+		});
+	}
+
+	// Internal function to display messages, with an option to skip saving history (for loading)
+	function displayMessageInternal(messageText, sender, addToHistory = true) {
 		const messageElement = document.createElement("div");
 		messageElement.classList.add("message");
 		messageElement.classList.add(
@@ -15,18 +52,23 @@ document.addEventListener("DOMContentLoaded", () => {
 				? "user-message"
 				: sender === "bot"
 				? "bot-message"
-				: sender === "error" // Changed "error-message" to "error" for consistency
+				: sender === "error"
 				? "error-message"
-				: "system-message" // Added for system messages like "Chat cleared"
+				: "system-message"
 		);
 		messageElement.textContent = messageText;
 		chatDisplay.appendChild(messageElement);
-		chatDisplay.scrollTop = chatDisplay.scrollHeight; // Scroll to the bottom
+		chatDisplay.scrollTop = chatDisplay.scrollHeight;
 
-		// Add to in-memory history unless it's a system message not meant for history
-		if (sender !== "system") {
+		if (addToHistory && sender !== "system") {
 			chatHistory.push({ text: messageText, sender: sender });
+			saveChatHistory(); // Save after adding a new message
 		}
+	}
+
+	// Public function to display a message in the chat (and save it)
+	function displayMessage(messageText, sender) {
+		displayMessageInternal(messageText, sender, true);
 	}
 
 	// Function to handle sending a message
@@ -36,10 +78,37 @@ document.addEventListener("DOMContentLoaded", () => {
 			displayMessage(userInput, "user");
 			chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
 				if (tabs && tabs.length > 0 && tabs[0].id) {
-					chrome.tabs.sendMessage(tabs[0].id, {
-						type: "SEND_CHAT_MESSAGE",
-						text: userInput,
-					});
+					chrome.tabs.sendMessage(
+						tabs[0].id,
+						{
+							type: "SEND_CHAT_MESSAGE",
+							text: userInput,
+						},
+						function (response) {
+							if (chrome.runtime.lastError) {
+								console.error(
+									"popup.js: Error sending SEND_CHAT_MESSAGE:",
+									chrome.runtime.lastError.message
+								);
+								// Display a more specific error to the user in the popup
+								displayMessage(
+									"Error: Could not connect to the page. " +
+										(chrome.runtime.lastError.message.includes(
+											"Receiving end does not exist"
+										)
+											? "The content script may not be running on this page or is not responding."
+											: chrome.runtime.lastError.message),
+									"error"
+								);
+							} else {
+								// Optional: Log success or handle response
+								console.log(
+									"popup.js: SEND_CHAT_MESSAGE successful, response:",
+									response
+								);
+							}
+						}
+					);
 				} else {
 					console.error(
 						"Could not send message: No active tab found or tab ID missing."
@@ -55,6 +124,7 @@ document.addEventListener("DOMContentLoaded", () => {
 	function clearChat() {
 		chatDisplay.innerHTML = "";
 		chatHistory = []; // Clear the in-memory history
+		saveChatHistory(); // Save the cleared history
 		displayMessage("Chat cleared.", "system"); // Optional: system message
 	}
 
@@ -82,6 +152,9 @@ document.addEventListener("DOMContentLoaded", () => {
 		// though not strictly needed here if not using sendResponse.
 		return true;
 	});
+
+	// Load chat history when the popup is opened
+	loadChatHistory();
 
 	// Initial message or welcome (can be re-enabled if desired)
 	// displayMessage("Welcome! Type your message below.", 'system');
